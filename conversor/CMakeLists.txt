@@ -40,9 +40,12 @@ add_executable(conversor conversor.c )
 pico_set_program_name(conversor "conversor")
 pico_set_program_version(conversor "0.1")
 
+# Generate PIO header
+pico_generate_pio_header(conversor ${CMAKE_CURRENT_LIST_DIR}/ws2818b.pio)
+
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(conversor 0)
-pico_enable_stdio_usb(conversor 0)
+pico_enable_stdio_usb(conversor 1)
 
 # Add the standard library to the build
 target_link_libraries(conversor
@@ -55,7 +58,11 @@ target_include_directories(conversor PRIVATE
 
 # Add any user requested libraries
 target_link_libraries(conversor 
-        
+        hardware_pwm
+        hardware_adc
+        hardware_i2c
+        hardware_pio
+        hardware_clocks
         )
 
 pico_add_extra_outputs(conversor)
