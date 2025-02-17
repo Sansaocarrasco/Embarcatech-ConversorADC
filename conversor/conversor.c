@@ -121,7 +121,7 @@ int main() {
         
         // Desenha no display
         ssd1306_clear(&ssd);
-        ssd1306_draw_rect(&ssd, square_x, square_y, 8, 8, 1);
+        ssd1306_rect(&ssd, square_x, square_y, 8, 8, 1, true); // O retângulo será preenchido com pixels "acesos"
         ssd1306_update(&ssd);
         
         sleep_ms(50);

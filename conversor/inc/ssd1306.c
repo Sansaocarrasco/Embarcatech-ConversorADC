@@ -198,3 +198,17 @@ void ssd1306_draw_string(ssd1306_t *ssd, const char *str, uint8_t x, uint8_t y)
     }
   }
 }
+
+//Função pra limpar a tela
+void ssd1306_clear(ssd1306_t *ssd) {
+  // Preenche todo o buffer com 0 (apagando a tela)
+  for (size_t i = 1; i < ssd->bufsize; ++i) {
+      ssd->ram_buffer[i] = 0x00;
+  }
+}
+
+//Função de update
+void ssd1306_update(ssd1306_t *ssd) {
+  // Envia os dados do buffer para o display
+  ssd1306_send_data(ssd);
+}
