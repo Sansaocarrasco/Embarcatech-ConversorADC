@@ -21,9 +21,7 @@
 #define JOYSTICK_Y 27
 #define BUTTON_JOY 22
 #define BUTTON_A 5
-#define SDA_PIN 14
-#define SCL_PIN 15
-#define TIME_DEBOUNCE 500  // Tempo de debounce para os botões (em milissegundos)
+#define TIME_DEBOUNCE 500  // Tempo de debounce (em milissegundos)
 
 
 ssd1306_t ssd;  // Instância do display OLED
