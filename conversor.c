@@ -16,12 +16,10 @@
 #define BUTTON_A_PIN 5     // GPIO para botão A
 #define TIME_DEBOUNCE 500  // Tempo de debounce para os botões (em milissegundos)
 
-
 // Definições de pinos dos LEDs
 #define LED_RED_PIN 13
 #define LED_GREEN_PIN 11
 #define LED_BLUE_PIN 12
-#define LED_DEBUG_PIN 25  // LED para debugging
 
 // Definir o valor máximo de desvio para considerar o joystick como "no centro"
 #define JOYSTICK_DEADZONE 100  // Ajuste esse valor conforme necessário
@@ -83,7 +81,6 @@ void draw_square(int square_x, int square_y) {
 }
 
 // Função de interrupção para o botão A (simplesmente alterna o estado do PWM e borda)
-// Função de interrupção para o botão A (simplesmente alterna o estado do PWM e borda)
 void button_irq_handler(uint gpio, uint32_t events) {
     uint32_t current_time = to_ms_since_boot(get_absolute_time());  // Tempo atual (em milissegundos)
 
@@ -113,8 +110,6 @@ int main() {
     gpio_set_dir(LED_GREEN_PIN, GPIO_OUT);
     setup_pwm(LED_RED_PIN);
     setup_pwm(LED_BLUE_PIN);
-    gpio_init(LED_DEBUG_PIN);
-    gpio_set_dir(LED_DEBUG_PIN, GPIO_OUT);  // LED de debug para visualização do estado do botão
 
     gpio_init(BUTTON_A_PIN);
     gpio_set_dir(BUTTON_A_PIN, GPIO_IN);
