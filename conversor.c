@@ -14,6 +14,8 @@
 #define JOYSTICK_Y_PIN 27  // GPIO para eixo Y
 #define BUTTON_JOY_PIN 22  // GPIO para botão do Joystick
 #define BUTTON_A_PIN 5     // GPIO para botão A
+#define TIME_DEBOUNCE 500  // Tempo de debounce para os botões (em milissegundos)
+
 
 // Definições de pinos dos LEDs
 #define LED_RED_PIN 13
@@ -25,11 +27,14 @@
 #define JOYSTICK_DEADZONE 100  // Ajuste esse valor conforme necessário
 
 // Variáveis globais
-bool pwm_enabled = true;
-bool leds_on = true;  // Estado dos LEDs (ligados ou desligados)
+bool pwm_enabled = true;  // Controle do PWM
 bool green_led_state = false;  // Estado do LED verde
+bool border_enabled = false;  // Controle da borda do display
 int border_style = 0;  // Estilo da borda (0: sólido, 1: pontilhado, 2: sem borda)
 ssd1306_t ssd;  // Instância do display OLED
+
+volatile uint32_t last_press_time_A = 0;
+volatile uint32_t last_press_time_JOY = 0;
 
 // Função para configurar o PWM nos LEDs
 void setup_pwm(uint pin) {
@@ -48,45 +53,57 @@ void update_pwm(uint pin, uint16_t value) {
     }
 }
 
-// Callback para o botão A
-void button_a_irq(uint gpio, uint32_t events) {
-    static absolute_time_t last_press = {0};
-    absolute_time_t now = get_absolute_time();
-    
-    // Debounce: se o botão for pressionado novamente em menos de 200ms, ignora
-    if (absolute_time_diff_us(last_press, now) < 200000) return;  
-    last_press = now;
-    
-    // Desliga os LEDs RGB (controlados por PWM)
-    update_pwm(LED_RED_PIN, 0);  // Desliga o LED vermelho
-    update_pwm(LED_GREEN_PIN, 0);  // Desliga o LED verde
-    update_pwm(LED_BLUE_PIN, 0);  // Desliga o LED azul
-    
-    pwm_enabled = false;  // Desabilita o controle PWM dos LEDs
-
-    // Também liga o LED de debug para indicar que os LEDs RGB estão desligados
-    gpio_put(LED_DEBUG_PIN, 1);
-    
-    // Desliga o controle de LEDs
-    leds_on = false;  // Os LEDs estão desligados agora
+// Função para alternar a borda
+void toggle_border() {
+    border_enabled = !border_enabled;  // Alterna a borda
 }
 
-// Callback para o botão do joystick
-void button_joy_irq(uint gpio, uint32_t events) {
-    static absolute_time_t last_press = {0};
-    absolute_time_t now = get_absolute_time();
-    
-    // Debounce: se o botão for pressionado novamente em menos de 200ms, ignora
-    if (absolute_time_diff_us(last_press, now) < 200000) return;  
-    last_press = now;
-    
-    // Alterna o LED verde
-    green_led_state = !green_led_state;  // Alterna o estado do LED verde
-    gpio_put(LED_GREEN_PIN, green_led_state ? 1 : 0);  // Liga ou desliga o LED verde
-    
-    // Modifica o estilo da borda
-    border_style = (border_style + 1) % 3;  // Alterna entre 3 estilos de borda (sólido, pontilhado, sem borda)
+// Função para desenhar a borda
+void draw_border(int square_x, int square_y) {
+    if (border_enabled) {
+        if (border_style == 0) {
+            // Borda sólida
+            ssd1306_rect(&ssd, square_x - 1, square_y - 1, 10, 10, 1, true); 
+        } else if (border_style == 1) {
+            // Borda pontilhada: desenha pequenos pontos ao redor
+            for (int i = 0; i < 10; i++) {
+                ssd1306_pixel(&ssd, square_x - 1 + i, square_y - 1, 1);
+                ssd1306_pixel(&ssd, square_x - 1 + i, square_y + 9, 1);
+                ssd1306_pixel(&ssd, square_x - 1, square_y - 1 + i, 1);
+                ssd1306_pixel(&ssd, square_x + 9, square_y - 1 + i, 1);
+            }
+        }
+    }
 }
+
+// Função para desenhar o quadrado
+void draw_square(int square_x, int square_y) {
+    ssd1306_rect(&ssd, square_x, square_y, 8, 8, 1, true); // Desenha o quadrado
+    ssd1306_update(&ssd);
+}
+
+// Função de interrupção para o botão A (simplesmente alterna o estado do PWM e borda)
+// Função de interrupção para o botão A (simplesmente alterna o estado do PWM e borda)
+void button_irq_handler(uint gpio, uint32_t events) {
+    uint32_t current_time = to_ms_since_boot(get_absolute_time());  // Tempo atual (em milissegundos)
+
+    if (gpio == BUTTON_A_PIN && current_time - last_press_time_A > TIME_DEBOUNCE){
+        pwm_enabled = !pwm_enabled;  // Alterna o estado do PWM
+        last_press_time_A = current_time;  // Atualiza o tempo da última pressão do botão A
+    }
+    
+    if (gpio == BUTTON_JOY_PIN && current_time - last_press_time_JOY > TIME_DEBOUNCE){
+        gpio_put(LED_RED_PIN, 0);
+        gpio_put(LED_BLUE_PIN, 0);
+
+        green_led_state = !green_led_state;  // Alterna o estado do LED verde
+        gpio_put(LED_GREEN_PIN, green_led_state ? 1 : 0);  // Liga ou desliga o LED verde
+
+        toggle_border();  // Alterna a borda
+        last_press_time_JOY = current_time;  // Atualiza o tempo da última pressão do joystick
+    }
+}
+
 
 int main() {
     stdio_init_all();
@@ -99,15 +116,19 @@ int main() {
     gpio_init(LED_DEBUG_PIN);
     gpio_set_dir(LED_DEBUG_PIN, GPIO_OUT);  // LED de debug para visualização do estado do botão
 
+    gpio_init(BUTTON_A_PIN);
+    gpio_set_dir(BUTTON_A_PIN, GPIO_IN);
     gpio_pull_up(BUTTON_A_PIN); // Configura o resistor pull-up
-    gpio_pull_up(BUTTON_JOY_PIN); // Configura o resistor pull-up
 
+
+    gpio_init(BUTTON_JOY_PIN);
+    gpio_set_dir(BUTTON_JOY_PIN, GPIO_IN);
+    gpio_pull_up(BUTTON_JOY_PIN); // Configura o resistor pull-up
     
-    // Configuração do botão A
-    gpio_set_irq_enabled_with_callback(BUTTON_A_PIN, GPIO_IRQ_EDGE_FALL, true, &button_a_irq);
-    
-    // Configuração do botão do joystick
-    gpio_set_irq_enabled_with_callback(BUTTON_JOY_PIN, GPIO_IRQ_EDGE_FALL, true, &button_joy_irq);
+
+    // Configuração dos botões para uma interrupção simples
+    gpio_set_irq_enabled_with_callback(BUTTON_A_PIN, GPIO_IRQ_EDGE_FALL, true, &button_irq_handler);
+    gpio_set_irq_enabled_with_callback(BUTTON_JOY_PIN, GPIO_IRQ_EDGE_FALL, true, &button_irq_handler);
     
     // Configuração do display OLED
     i2c_init(I2C_PORT, 400 * 1000);
@@ -146,7 +167,7 @@ int main() {
             update_pwm(LED_RED_PIN, 0);
             update_pwm(LED_GREEN_PIN, 0);
             update_pwm(LED_BLUE_PIN, 0);
-        } else {
+        } else  {
             // Se o eixo X for movido, controla o brilho do LED vermelho
             update_pwm(LED_RED_PIN, abs((int)adc_value_x - 2048) * 2);  // LED vermelho controla pelo eixo X
 
@@ -173,27 +194,16 @@ int main() {
         square_y = (square_y > (127 - 8)) ? (127 - 8) : square_y;  // Limita para baixo
         square_y = (square_y < 8) ? 8 : square_y;  // Limita para cima
 
-        // Limpa o display e desenha o quadrado
+        // Limpa o display
         ssd1306_clear(&ssd);
-        
-        // Desenha a borda do retângulo de acordo com o estilo escolhido
-        if (border_style == 0) {
-            ssd1306_rect(&ssd, square_x - 1, square_y - 1, 10, 10, 1, true); // Borda sólida
-        } else if (border_style == 1) {
-            // Borda pontilhada: desenha pequenos pontos ao redor
-            for (int i = 0; i < 10; i++) {
-                ssd1306_pixel(&ssd, square_x - 1 + i, square_y - 1, 1);
-                ssd1306_pixel(&ssd, square_x - 1 + i, square_y + 9, 1);
-                ssd1306_pixel(&ssd, square_x - 1, square_y - 1 + i, 1);
-                ssd1306_pixel(&ssd, square_x + 9, square_y - 1 + i, 1);
-            }
-        } else if (border_style == 2) {
-            // Sem borda: não desenha nada
+
+        // Desenha a borda do retângulo se a borda estiver habilitada
+        if (border_enabled) {
+            draw_border(square_x, square_y);  // Chama a função para desenhar a borda
         }
-        
+
         // Desenha o quadrado
-        ssd1306_rect(&ssd, square_x, square_y, 8, 8, 1, true); // Desenha o quadrado
-        ssd1306_update(&ssd);
+        draw_square(square_x, square_y);  // Chama a função para desenhar o quadrado
         
         sleep_ms(50);  // Delay para evitar atualizações muito rápidas
     }
