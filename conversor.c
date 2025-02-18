@@ -16,19 +16,15 @@
 #define BUTTON_A_PIN 5     // GPIO para botão A
 
 // Definições de pinos dos LEDs
-#define LED_RED_PIN 11
-#define LED_GREEN_PIN 12
-#define LED_BLUE_PIN 13
+#define LED_RED_PIN 13
+#define LED_GREEN_PIN 11
+#define LED_BLUE_PIN 12
 
-// Definir o tipo de borda (3 estilos)
-#define BORDER_STYLE_1 0
-#define BORDER_STYLE_2 1
-#define BORDER_STYLE_3 2
+// Definir o valor máximo de desvio para considerar o joystick como "no centro"
+#define JOYSTICK_DEADZONE 100  // Ajuste esse valor conforme necessário
 
 // Variáveis globais
-bool led_green_state = false;
 bool pwm_enabled = true;
-int border_style = BORDER_STYLE_1;
 ssd1306_t ssd;  // Instância do display OLED
 
 // Função para configurar o PWM nos LEDs
@@ -46,21 +42,6 @@ void update_pwm(uint pin, uint16_t value) {
     } else {
         pwm_set_gpio_level(pin, 0);
     }
-}
-
-// Callback para o botão do joystick
-void button_joy_irq(uint gpio, uint32_t events) {
-    static absolute_time_t last_press = {0};
-    absolute_time_t now = get_absolute_time();
-    if (absolute_time_diff_us(last_press, now) < 200000) return;
-    last_press = now;
-    
-    // Alterna o estado do LED verde
-    led_green_state = !led_green_state;
-    gpio_put(LED_GREEN_PIN, led_green_state);
-    
-    // Modifica o estilo da borda
-    border_style = (border_style + 1) % 3;
 }
 
 // Callback para o botão A
@@ -83,8 +64,7 @@ int main() {
     setup_pwm(LED_RED_PIN);
     setup_pwm(LED_BLUE_PIN);
     
-    // Configuração dos botões
-    gpio_set_irq_enabled_with_callback(BUTTON_JOY_PIN, GPIO_IRQ_EDGE_FALL, true, &button_joy_irq);
+    // Configuração do botão A
     gpio_set_irq_enabled_with_callback(BUTTON_A_PIN, GPIO_IRQ_EDGE_FALL, true, &button_a_irq);
     
     // Configuração do display OLED
@@ -118,9 +98,26 @@ int main() {
         adc_select_input(1);
         adc_value_y = adc_read();
         
-        // Atualiza os PWM dos LEDs
-        update_pwm(LED_RED_PIN, abs((int)adc_value_x - 2048) * 2);  // LED vermelho controla pelo eixo X
-        update_pwm(LED_BLUE_PIN, abs((int)adc_value_y - 2048) * 2); // LED azul controla pelo eixo Y
+        // Verifica se o joystick está no centro (deadzone)
+        if (abs((int)adc_value_x - 2048) < JOYSTICK_DEADZONE && abs((int)adc_value_y - 2048) < JOYSTICK_DEADZONE) {
+            // Desliga todos os LEDs quando o joystick estiver no centro
+            update_pwm(LED_RED_PIN, 0);
+            update_pwm(LED_GREEN_PIN, 0);
+            update_pwm(LED_BLUE_PIN, 0);
+        } else {
+            // Se o eixo X for movido, controla o brilho do LED vermelho
+            update_pwm(LED_RED_PIN, abs((int)adc_value_x - 2048) * 2);  // LED vermelho controla pelo eixo X
+
+            // Se o eixo Y for movido, controla o brilho do LED azul e desliga os outros LEDs
+            if (abs((int)adc_value_y - 2048) > JOYSTICK_DEADZONE) {
+                update_pwm(LED_BLUE_PIN, abs((int)adc_value_y - 2048) * 2);  // LED azul controla pelo eixo Y
+                update_pwm(LED_RED_PIN, 0);  // Desliga o LED vermelho
+                update_pwm(LED_GREEN_PIN, 0);  // Desliga o LED verde
+            } else {
+                // Se o eixo Y estiver centralizado ou com pouco desvio, desliga o LED azul
+                update_pwm(LED_BLUE_PIN, 0);
+            }
+        }
         
         // Atualiza a posição do quadrado com o ajuste para centralizar
         // Reverter o eixo X e Y
@@ -139,16 +136,6 @@ int main() {
         ssd1306_rect(&ssd, square_x, square_y, 8, 8, 1, true); // Desenha o quadrado
         ssd1306_update(&ssd);
         
-        // Desenha a borda, dependendo do estilo
-        if (border_style == BORDER_STYLE_1) {
-            ssd1306_rect(&ssd, 0, 0, 127, 63, 1, false);  // Borda simples
-        } else if (border_style == BORDER_STYLE_2) {
-            ssd1306_rect(&ssd, 0, 0, 127, 63, 1, false);  // Borda com maior espessura
-            ssd1306_rect(&ssd, 1, 1, 125, 61, 1, false);  // Borda interna
-        } else if (border_style == BORDER_STYLE_3) {
-            ssd1306_rect(&ssd, 0, 0, 127, 63, 1, true);   // Borda invertida
-        }
-
         sleep_ms(50);  // Delay para evitar atualizações muito rápidas
     }
 }
